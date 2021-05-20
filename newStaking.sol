@@ -44,7 +44,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     uint256 WeightScale = 100;
     address public rewardProvider =0x26356Cb66F8fd62c03F569EC3691B6F00173EB02;
 
-    //withdraw rate 5 for 0.05% 
+    //withdraw rate 5 for 0.05%
     uint256 public withdrawRate = 0;
     uint256 public feeScale = 10000;
 
@@ -59,7 +59,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     struct Double {
         uint mantissa;
     }
-    
+
     string [] levels = ["Carbon","Genesis","Platinum","Zironium","Diamond"];
 
 
@@ -114,7 +114,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         _ratesLevel[levels[1]] = RateLevel({min:500000,max:999999,weight:250});
         _ratesLevel[levels[2]] = RateLevel({min:1000000,max:4999999,weight:400});
         _ratesLevel[levels[3]] = RateLevel({min:5000000,max:9999999,weight:600});
-        _ratesLevel[levels[4]] = RateLevel({min:10000000,max:999999999999,weight:800});
+        _ratesLevel[levels[4]] = RateLevel({min:10000000,max:999999999999,weight:1100});
 
     }
 
@@ -153,7 +153,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     function withdrawableAmount(address account)public view returns(uint256){
         uint256 amount = 0;
         TimedStake storage _timedStake = timeStakeInfo[account];
-        
+
         for (uint8 index = 0; index < _timedStake.stakeTimes.length; index++) {
             uint256 key = _timedStake.stakeTimes[index];
             if (now.sub(key) > lockDownDuration){
@@ -173,6 +173,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         require(amount > 0, "Cannot stake 0");
         totalStakes = totalStakes.add(amount);
         _balances[msg.sender] = _balances[msg.sender].add(amount);
+        stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
         TimedStake storage _timedStake = timeStakeInfo[msg.sender];
         _timedStake.stakes[now] = amount;
@@ -185,7 +186,6 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         emit Staked(msg.sender,amount);
     }
 
-   
     function withdraw(uint256 amount) public nonReentrant {
         require(amount > 0, "Cannot withdraw 0");
         totalStakes = totalStakes.sub(amount);
@@ -226,7 +226,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         require( rewards > 0,"no rewards for this account");
         require(rewardsToken.transferFrom(rewardProvider, msg.sender, rewards),"claim rewards failed");
         delete(_userRewards[msg.sender]);
-        
+
         emit Claimed(msg.sender,rewards);
     }
 
@@ -294,7 +294,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         }
     }
 
-    function getBalanceLevel(uint256 balance) view internal returns(string memory){
+    function getBalanceLevel(uint256 balance) view public returns(string memory){
         for (uint8 index = 0 ;index < levels.length; index++){
             RateLevel memory tmp = _ratesLevel[levels[index]];
             if (balance >= tmp.min.mul(phbDecimals) && balance <= tmp.max.mul(phbDecimals)){
