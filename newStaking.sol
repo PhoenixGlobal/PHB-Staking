@@ -60,7 +60,6 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     struct Double {
         uint mantissa;
     }
-
     string [] levels = ["Carbon","Genesis","Platinum","Zironium","Diamond"];
 
 
@@ -153,7 +152,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     function withdrawableAmount(address account)public view returns(uint256){
         uint256 amount = 0;
         TimedStake storage _timedStake = timeStakeInfo[account];
-
+        
         for (uint8 index = 0; index < _timedStake.stakeTimes.length; index++) {
             uint256 key = _timedStake.stakeTimes[index];
             if (now.sub(key) > lockDownDuration){
@@ -226,7 +225,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         require( rewards > 0,"no rewards for this account");
         require(rewardsToken.transferFrom(rewardProvider, msg.sender, rewards),"claim rewards failed");
         delete(_userRewards[msg.sender]);
-
+        
         emit Claimed(msg.sender,rewards);
     }
 
