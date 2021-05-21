@@ -44,7 +44,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     uint256 WeightScale = 100;
     address public rewardProvider =0x26356Cb66F8fd62c03F569EC3691B6F00173EB02;
 
-    //withdraw rate 5 for 0.05% 
+    //withdraw rate 5 for 0.05%
     uint256 public withdrawRate = 0;
     uint256 public feeScale = 10000;
 
@@ -59,7 +59,6 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     struct Double {
         uint mantissa;
     }
-    
     string [] levels = ["Carbon","Genesis","Platinum","Zironium","Diamond"];
 
 
@@ -115,7 +114,6 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         _ratesLevel[levels[2]] = RateLevel({min:1000000,max:4999999,weight:400});
         _ratesLevel[levels[3]] = RateLevel({min:5000000,max:9999999,weight:600});
         _ratesLevel[levels[4]] = RateLevel({min:10000000,max:999999999999,weight:1100});
-
     }
 
 
@@ -303,6 +301,13 @@ contract PhbStaking is ReentrancyGuard, Pausable {
             }
         }
         return "";
+    }
+
+    function getLevels(string memory level) view public returns(uint256, uint256, uint256){
+        uint256 min = _ratesLevel[level].min;
+        uint256 max = _ratesLevel[level].max;
+        uint256 weight = _ratesLevel[level].weight;
+        return (min, max, weight);
     }
 
     /*========Double============*/
