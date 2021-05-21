@@ -44,7 +44,11 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     uint256 WeightScale = 100;
     address public rewardProvider =0x26356Cb66F8fd62c03F569EC3691B6F00173EB02;
 
+<<<<<<< HEAD
     //withdraw rate 5 for 0.05%
+=======
+    //withdraw rate 5 for 0.05% 
+>>>>>>> 0b4b211 (Create newStaking.sol)
     uint256 public withdrawRate = 0;
     uint256 public feeScale = 10000;
 
@@ -59,6 +63,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     struct Double {
         uint mantissa;
     }
+    
     string [] levels = ["Carbon","Genesis","Platinum","Zironium","Diamond"];
 
 
