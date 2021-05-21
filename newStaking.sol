@@ -44,11 +44,8 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     uint256 WeightScale = 100;
     address public rewardProvider =0x26356Cb66F8fd62c03F569EC3691B6F00173EB02;
 
-<<<<<<< HEAD
     //withdraw rate 5 for 0.05%
-=======
-    //withdraw rate 5 for 0.05% 
->>>>>>> 0b4b211 (Create newStaking.sol)
+
     uint256 public withdrawRate = 0;
     uint256 public feeScale = 10000;
 
@@ -63,7 +60,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     struct Double {
         uint mantissa;
     }
-    
+
     string [] levels = ["Carbon","Genesis","Platinum","Zironium","Diamond"];
 
 
@@ -156,7 +153,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     function withdrawableAmount(address account)public view returns(uint256){
         uint256 amount = 0;
         TimedStake storage _timedStake = timeStakeInfo[account];
-        
+
         for (uint8 index = 0; index < _timedStake.stakeTimes.length; index++) {
             uint256 key = _timedStake.stakeTimes[index];
             if (now.sub(key) > lockDownDuration){
@@ -229,7 +226,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         require( rewards > 0,"no rewards for this account");
         require(rewardsToken.transferFrom(rewardProvider, msg.sender, rewards),"claim rewards failed");
         delete(_userRewards[msg.sender]);
-        
+
         emit Claimed(msg.sender,rewards);
     }
 
