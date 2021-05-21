@@ -8,7 +8,7 @@ interface IPhbStaking {
     function withdrawableAmount(address account)external view returns(uint256);
     function totalStakes() external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
-    // function getBalanceLevel(uint256 balance) view external returns(string memory);
+    function getBalanceLevel(address account) view external returns(string memory);
 
     // Mutative
 

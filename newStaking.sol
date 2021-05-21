@@ -44,7 +44,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     uint256 WeightScale = 100;
     address public rewardProvider =0x26356Cb66F8fd62c03F569EC3691B6F00173EB02;
 
-    //withdraw rate 5 for 0.05%
+    //withdraw rate 5 for 0.05% 
     uint256 public withdrawRate = 0;
     uint256 public feeScale = 10000;
 
@@ -59,7 +59,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     struct Double {
         uint mantissa;
     }
-
+    
     string [] levels = ["Carbon","Genesis","Platinum","Zironium","Diamond"];
 
 
@@ -143,7 +143,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         Double memory deltaIndex = sub_(gIndex,uIndex);
         uint256 supplierDelta = mul_(_balances[account],deltaIndex);
 
-        string memory lv = getBalanceLevel(_balances[account]);
+        string memory lv = getBalanceLevel(account);
         uint weight = bytes(lv).length==0 ?0:_ratesLevel[lv].weight;
         supplierDelta =  supplierDelta.mul(weight).div(WeightScale);
 
@@ -153,7 +153,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     function withdrawableAmount(address account)public view returns(uint256){
         uint256 amount = 0;
         TimedStake storage _timedStake = timeStakeInfo[account];
-
+        
         for (uint8 index = 0; index < _timedStake.stakeTimes.length; index++) {
             uint256 key = _timedStake.stakeTimes[index];
             if (now.sub(key) > lockDownDuration){
@@ -185,7 +185,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
 
         emit Staked(msg.sender,amount);
     }
-
+   
     function withdraw(uint256 amount) public nonReentrant {
         require(amount > 0, "Cannot withdraw 0");
         totalStakes = totalStakes.sub(amount);
@@ -226,7 +226,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         require( rewards > 0,"no rewards for this account");
         require(rewardsToken.transferFrom(rewardProvider, msg.sender, rewards),"claim rewards failed");
         delete(_userRewards[msg.sender]);
-
+        
         emit Claimed(msg.sender,rewards);
     }
 
@@ -266,7 +266,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         Double memory deltaIndex = sub_(gIndex,uIndex);
         uint256 supplierDelta = mul_(_balances[account],deltaIndex);
 
-        string memory lv = getBalanceLevel(_balances[account]);
+        string memory lv = getBalanceLevel(account);
         uint weight = bytes(lv).length==0 ?0:_ratesLevel[lv].weight;
         supplierDelta =  supplierDelta.mul(weight).div(WeightScale);
         _userRewards[account] = supplierDelta.add(_userRewards[account] );
@@ -294,7 +294,8 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         }
     }
 
-    function getBalanceLevel(uint256 balance) view public returns(string memory){
+    function getBalanceLevel(address account) view public returns(string memory){
+        uint256 balance = _balances[account];
         for (uint8 index = 0 ;index < levels.length; index++){
             RateLevel memory tmp = _ratesLevel[levels[index]];
             if (balance >= tmp.min.mul(phbDecimals) && balance <= tmp.max.mul(phbDecimals)){
