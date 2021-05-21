@@ -1,6 +1,5 @@
 pragma solidity >=0.4.24;
 
-
 // https://docs.synthetix.io/contracts/source/interfaces/istakingrewards
 interface IPhbStaking {
     // Views
@@ -9,6 +8,7 @@ interface IPhbStaking {
     function totalStakes() external view returns (uint256);
     function balanceOf(address account) external view returns (uint256);
     function getBalanceLevel(address account) view external returns(string memory);
+    function getLevels(string calldata level) view external returns(uint256, uint256, uint256);
 
     // Mutative
 
