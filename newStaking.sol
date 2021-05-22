@@ -1,4 +1,5 @@
 pragma solidity ^0.5.16;
+pragma experimental ABIEncoderV2;
 
 import "openzeppelin-solidity/contracts/math/Math.sol";
 import "openzeppelin-solidity/contracts/math/SafeMath.sol";
@@ -36,6 +37,8 @@ contract PhbStaking is ReentrancyGuard, Pausable {
 
     uint256 public lockDownDuration = 5 seconds;
     uint256 public totalStakes ;
+    
+    uint256 public virtualTotalStakes;
 
     uint constant doubleScale = 1e36;
 
@@ -44,8 +47,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     uint256 WeightScale = 100;
     address public rewardProvider =0x26356Cb66F8fd62c03F569EC3691B6F00173EB02;
 
-    //withdraw rate 5 for 0.05%
-
+    //withdraw rate 5 for 0.05% 
     uint256 public withdrawRate = 0;
     uint256 public feeScale = 10000;
 
@@ -60,6 +62,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     struct Double {
         uint mantissa;
     }
+    
     string [] levels = ["Carbon","Genesis","Platinum","Zironium","Diamond"];
 
 
@@ -70,6 +73,9 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     }
 
     mapping(string => RateLevel) _ratesLevel;
+    mapping(string => uint256) levelAmount;
+
+    mapping(address=>uint256) virtualUserbalance;
 
     struct userStaking {
         uint256 amount;
@@ -115,6 +121,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         _ratesLevel[levels[2]] = RateLevel({min:1000000,max:4999999,weight:400});
         _ratesLevel[levels[3]] = RateLevel({min:5000000,max:9999999,weight:600});
         _ratesLevel[levels[4]] = RateLevel({min:10000000,max:999999999999,weight:1100});
+
     }
 
 
@@ -130,7 +137,9 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         uint256 deltaTime = now.sub(globalIndex.lastTime);
 
         uint256 rewardAccued = deltaTime.mul(rewardSpeed);
-        Double memory ratio = totalStakes > 0 ? fraction(rewardAccued,totalStakes):Double({mantissa:0});
+        // Double memory ratio = totalStakes > 0 ? fraction(rewardAccued,totalStakes):Double({mantissa:0});
+        Double memory ratio = virtualTotalStakes > 0 ? fraction(rewardAccued,virtualTotalStakes):Double({mantissa:0});
+
         Double memory gIndex = add_(Double({mantissa: globalIndex.index}), ratio);
 
         Double memory uIndex = Double({mantissa:userIndex[account].index});
@@ -140,11 +149,12 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         }
 
         Double memory deltaIndex = sub_(gIndex,uIndex);
-        uint256 supplierDelta = mul_(_balances[account],deltaIndex);
+        // uint256 supplierDelta = mul_(_balances[account],deltaIndex);
+        uint256 supplierDelta = mul_(virtualUserbalance[account],deltaIndex);
 
-        string memory lv = getBalanceLevel(account);
-        uint weight = bytes(lv).length==0 ?0:_ratesLevel[lv].weight;
-        supplierDelta =  supplierDelta.mul(weight).div(WeightScale);
+        // string memory lv = getBalanceLevel(_balances[account]);
+        // uint weight = bytes(lv).length==0 ?0:_ratesLevel[lv].weight;
+        // supplierDelta =  supplierDelta.mul(weight).div(WeightScale);
 
         return supplierDelta.add(_userRewards[account] );
     }
@@ -162,6 +172,19 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         return amount;
     }
 
+    function getLevelInfos() external view returns(string[] memory){
+        return levels;
+    }
+
+    function getLevelDetail(string calldata lv) external view returns(RateLevel memory){
+        return _ratesLevel[lv];
+    }
+
+    function getLevelStakes(string calldata lv) external view returns(uint256){
+        return levelAmount[lv];
+    }
+
+
     /* ========== MUTATIVE FUNCTIONS ========== */
     function setLevel( string calldata lv,uint256 min,uint256 max,uint256 weight) external onlyOwner{
         _ratesLevel[lv] = RateLevel({min:min,max:max,weight:weight});
@@ -172,6 +195,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         require(amount > 0, "Cannot stake 0");
         totalStakes = totalStakes.add(amount);
         _balances[msg.sender] = _balances[msg.sender].add(amount);
+
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
         TimedStake storage _timedStake = timeStakeInfo[msg.sender];
@@ -182,13 +206,33 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         updateGlobalIndex();
         distributeReward(msg.sender);
 
+        uint256 rewards = _userRewards[msg.sender];
+        if (rewards > 0){
+            require(rewardsToken.transferFrom(rewardProvider, msg.sender, rewards),"claim rewards failed");
+            delete(_userRewards[msg.sender]);
+            emit Claimed(msg.sender,rewards);
+        }
+        updateVAmounts(msg.sender,amount);
+
         emit Staked(msg.sender,amount);
     }
+
    
     function withdraw(uint256 amount) public nonReentrant {
         require(amount > 0, "Cannot withdraw 0");
         totalStakes = totalStakes.sub(amount);
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
+        
+        updateGlobalIndex();
+        distributeReward(msg.sender);
+
+        uint256 rewards = _userRewards[msg.sender];
+        if (rewards > 0){
+            require(rewardsToken.transferFrom(rewardProvider, msg.sender, rewards),"claim rewards failed");
+            delete(_userRewards[msg.sender]);
+            emit Claimed(msg.sender,rewards);
+        }
+        updateVAmounts(msg.sender,amount);
 
         require(withdrawableAmount(msg.sender) >= amount,"not enough withdrawable balance");
         dealwithLockdown(amount,msg.sender);
@@ -197,6 +241,10 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         if (fee > 0 ){
             stakingToken.safeTransfer(feeCollector, fee);
         }
+
+
+
+
         emit Withdrawn(msg.sender, amount.sub(fee));
     }
 
@@ -243,7 +291,9 @@ contract PhbStaking is ReentrancyGuard, Pausable {
 
         if (deltaTime > 0 && rewardSpeed > 0) {
             uint256 rewardAccued = deltaTime.mul(rewardSpeed);
-            Double memory ratio = totalStakes > 0 ? fraction(rewardAccued,totalStakes):Double({mantissa:0});
+            // Double memory ratio = totalStakes > 0 ? fraction(rewardAccued,totalStakes):Double({mantissa:0});
+            Double memory ratio = virtualTotalStakes > 0 ? fraction(rewardAccued,virtualTotalStakes):Double({mantissa:0});
+
             Double memory newIndex = add_(Double({mantissa: globalIndex.index}), ratio);
             globalIndex.index = newIndex.mantissa;
             globalIndex.lastTime = now;
@@ -263,11 +313,12 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         }
 
         Double memory deltaIndex = sub_(gIndex,uIndex);
-        uint256 supplierDelta = mul_(_balances[account],deltaIndex);
+        // uint256 supplierDelta = mul_(_balances[account],deltaIndex);
+        uint256 supplierDelta = mul_(virtualUserbalance[account],deltaIndex);
 
-        string memory lv = getBalanceLevel(account);
-        uint weight = bytes(lv).length==0 ?0:_ratesLevel[lv].weight;
-        supplierDelta =  supplierDelta.mul(weight).div(WeightScale);
+        // string memory lv = getBalanceLevel(_balances[account]);
+        // uint weight = bytes(lv).length==0 ?0:_ratesLevel[lv].weight;
+        // supplierDelta =  supplierDelta.mul(weight).div(WeightScale);
         _userRewards[account] = supplierDelta.add(_userRewards[account] );
     }
 
@@ -293,22 +344,40 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         }
     }
 
-    function getBalanceLevel(address account) view public returns(string memory){
-        uint256 balance = _balances[account];
+    function getBalanceLevel(uint256 balance) view internal returns(string memory){
         for (uint8 index = 0 ;index < levels.length; index++){
             RateLevel memory tmp = _ratesLevel[levels[index]];
-            if (balance >= tmp.min.mul(phbDecimals) && balance <= tmp.max.mul(phbDecimals)){
+            if (balance >= tmp.min.mul(phbDecimals) && balance < tmp.max.mul(phbDecimals)){
                 return levels[index];
             }
         }
         return "";
     }
 
-    function getLevels(string memory level) view public returns(uint256, uint256, uint256){
-        uint256 min = _ratesLevel[level].min;
-        uint256 max = _ratesLevel[level].max;
-        uint256 weight = _ratesLevel[level].weight;
-        return (min, max, weight);
+    function updateVAmounts(address userAcct,uint256 amount) internal {
+        uint256 balanceBefore = _balances[userAcct];
+        string memory lvBefore = getBalanceLevel(balanceBefore);
+        uint weightBefore = bytes(lvBefore).length==0 ?0:_ratesLevel[lvBefore].weight;
+        uint256 balanceAfter = balanceBefore.add(amount);
+
+        string memory lvAfter = getBalanceLevel(balanceAfter);
+        uint weightAfter = bytes(lvAfter).length==0 ?0:_ratesLevel[lvAfter].weight;
+
+        //update vbalance
+        uint256 vbalanceBefore =  virtualUserbalance[userAcct] ;
+        virtualUserbalance[userAcct] = balanceAfter.mul(weightAfter).div(WeightScale);
+
+        //update vtotalstake
+        virtualTotalStakes = virtualTotalStakes.sub(vbalanceBefore).add( virtualUserbalance[userAcct]);
+
+        if (weightBefore == weightAfter){
+            //add amount to lv
+            levelAmount[lvBefore] = levelAmount[lvBefore].add(amount);
+        }else{
+            levelAmount[lvBefore] = levelAmount[lvBefore].sub(balanceBefore);
+            levelAmount[lvAfter] = levelAmount[lvAfter].add(balanceAfter);
+        }
+
     }
 
     /*========Double============*/
