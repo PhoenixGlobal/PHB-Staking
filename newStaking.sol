@@ -222,7 +222,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         require(amount > 0, "Cannot withdraw 0");
         totalStakes = totalStakes.sub(amount);
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
-        
+
         updateGlobalIndex();
         distributeReward(msg.sender);
 
@@ -241,9 +241,6 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         if (fee > 0 ){
             stakingToken.safeTransfer(feeCollector, fee);
         }
-
-
-
 
         emit Withdrawn(msg.sender, amount.sub(fee));
     }
@@ -280,6 +277,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     //calculate tokens per seconds
 
     function setInflationSpeed(uint256 speed) public onlyOwner {
+        updateGlobalIndex();
         inflationSpeed = speed;
         emit InflationSpeedUpdated(speed);
     }
