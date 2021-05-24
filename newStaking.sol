@@ -212,7 +212,8 @@ contract PhbStaking is ReentrancyGuard, Pausable {
             delete(_userRewards[msg.sender]);
             emit Claimed(msg.sender,rewards);
         }
-        updateVAmounts(msg.sender,amount);
+        updateVAmounts(msg.sender,amount, true);
+
 
         emit Staked(msg.sender,amount);
     }
@@ -232,7 +233,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
             delete(_userRewards[msg.sender]);
             emit Claimed(msg.sender,rewards);
         }
-        updateVAmounts(msg.sender,amount);
+        updateVAmounts(msg.sender, amount, false);
 
         require(withdrawableAmount(msg.sender) >= amount,"not enough withdrawable balance");
         dealwithLockdown(amount,msg.sender);
@@ -352,12 +353,18 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         return "";
     }
 
-    function updateVAmounts(address userAcct,uint256 amount) internal {
-        uint256 balanceBefore = _balances[userAcct];
+    function updateVAmounts(address userAcct, uint amount, bool flag) internal {
+        uint256 balanceBefore;
+        uint256 balanceAfter;
+        if(flag){
+            balanceBefore = _balances[userAcct].sub(amount);
+            balanceAfter = _balances[userAcct];
+        } else{
+            balanceBefore = _balances[userAcct].add(amount);
+            balanceAfter = _balances[userAcct];
+        }
         string memory lvBefore = getBalanceLevel(balanceBefore);
         uint weightBefore = bytes(lvBefore).length==0 ?0:_ratesLevel[lvBefore].weight;
-        uint256 balanceAfter = balanceBefore.add(amount);
-
         string memory lvAfter = getBalanceLevel(balanceAfter);
         uint weightAfter = bytes(lvAfter).length==0 ?0:_ratesLevel[lvAfter].weight;
 
@@ -366,11 +373,11 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         virtualUserbalance[userAcct] = balanceAfter.mul(weightAfter).div(WeightScale);
 
         //update vtotalstake
-        virtualTotalStakes = virtualTotalStakes.sub(vbalanceBefore).add( virtualUserbalance[userAcct]);
+        virtualTotalStakes = virtualTotalStakes.sub(vbalanceBefore).add(virtualUserbalance[userAcct]);
 
         if (weightBefore == weightAfter){
             //add amount to lv
-            levelAmount[lvBefore] = levelAmount[lvBefore].add(amount);
+            levelAmount[lvBefore] = levelAmount[lvBefore].sub(balanceBefore).add(balanceAfter);
         }else{
             levelAmount[lvBefore] = levelAmount[lvBefore].sub(balanceBefore);
             levelAmount[lvAfter] = levelAmount[lvAfter].add(balanceAfter);
