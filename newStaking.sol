@@ -29,6 +29,9 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     /// @notice Emitted when set inflation speed
     event InflationSpeedUpdated(uint256 newSpeed);
 
+    /// @notice Emitted when apply withdraw
+    event ApplyWithdraw(address indexed user,uint256 amount, uint256 time);
+
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
@@ -77,19 +80,24 @@ contract PhbStaking is ReentrancyGuard, Pausable {
 
     mapping(address=>uint256) virtualUserbalance;
 
-    struct userStaking {
+    struct withdrawApplication {
         uint256 amount;
-        uint256 stakingTime;
+        uint256 applyTime;
     }
 
     mapping(address => uint256) _userRewards;
 
-    struct TimedStake {
-      mapping(uint256 => uint256) stakes;
-      uint256[] stakeTimes;
+    //this record the user withdraw application
+    //according to the requirement, when user want to withdraw his staking phb, he needs to 
+    //1. call applyWithdraw , this will add a lock period (7 days by default, can be changed by admin) 
+    //2. call withdraw to withdraw the "withdrawable amounts"
+    struct TimedWithdraw {
+        uint256 totalApplied;                      //total user applied for withdraw
+        mapping(uint256 => uint256) applications;  //apply detail time=>amount
+        uint256[] applyTimes;                      //apply timestamp, used for the key of applications mapping
     }
 
-    mapping(address => TimedStake) timeStakeInfo;
+    mapping(address => TimedWithdraw) timeApplyInfo;   //user => TimedWithdraw mapping
     mapping(address => uint256) _balances;
 
     struct Index {
@@ -120,7 +128,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         _ratesLevel[levels[1]] = RateLevel({min:500000,max:999999,weight:250});
         _ratesLevel[levels[2]] = RateLevel({min:1000000,max:4999999,weight:400});
         _ratesLevel[levels[3]] = RateLevel({min:5000000,max:9999999,weight:600});
-        _ratesLevel[levels[4]] = RateLevel({min:10000000,max:999999999999,weight:1100});
+        _ratesLevel[levels[4]] = RateLevel({min:10000000,max:999999999999,weight:800});
 
     }
 
@@ -131,6 +139,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         return _balances[account];
     }
 
+    //to calculate the rewards by the gap of userindex and globalindx
     function getUserRewards(address account) public view returns(uint256){
         // updateGlobalIndex();
         uint256 rewardSpeed = inflationSpeed;
@@ -149,37 +158,50 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         }
 
         Double memory deltaIndex = sub_(gIndex,uIndex);
-        // uint256 supplierDelta = mul_(_balances[account],deltaIndex);
+      
         uint256 supplierDelta = mul_(virtualUserbalance[account],deltaIndex);
-
-        // string memory lv = getBalanceLevel(_balances[account]);
-        // uint weight = bytes(lv).length==0 ?0:_ratesLevel[lv].weight;
-        // supplierDelta =  supplierDelta.mul(weight).div(WeightScale);
 
         return supplierDelta.add(_userRewards[account] );
     }
 
+    //calculate the total amount which apply time already passed [7 days]
     function withdrawableAmount(address account)public view returns(uint256){
         uint256 amount = 0;
-        TimedStake storage _timedStake = timeStakeInfo[account];
+        TimedWithdraw storage withdrawApplies = timeApplyInfo[account];
         
-        for (uint8 index = 0; index < _timedStake.stakeTimes.length; index++) {
-            uint256 key = _timedStake.stakeTimes[index];
+        for (uint8 index = 0; index < withdrawApplies.applyTimes.length; index++) {
+            uint256 key = withdrawApplies.applyTimes[index];
             if (now.sub(key) > lockDownDuration){
-                amount = amount.add(_timedStake.stakes[key]);
+                amount = amount.add(withdrawApplies.applications[key]);
             }
         }
         return amount;
     }
 
+    //for front end display, the following two method should be used together
+    //
+    //since we can't return mapping from smart contract ,we only return total applied and applied times here
+    function getUserApplication(address account) external view returns(uint256,uint256[] memory){
+        return (timeApplyInfo[account].totalApplied,timeApplyInfo[account].applyTimes);
+    }
+
+    //we use the applied time as key to get the amount of this time
+    function getUserApplicationCount(address account, uint256 time) external view returns(uint256){
+        return timeApplyInfo[account].applications[time];
+    }
+
+
+    //return levels config in contract
     function getLevelInfos() external view returns(string[] memory){
         return levels;
     }
 
+    //return level detail,key is result of previous function
     function getLevelDetail(string calldata lv) external view returns(RateLevel memory){
         return _ratesLevel[lv];
     }
 
+    //return the total staked amount for the given level
     function getLevelStakes(string calldata lv) external view returns(uint256){
         return levelAmount[lv];
     }
@@ -193,39 +215,58 @@ contract PhbStaking is ReentrancyGuard, Pausable {
 
     function stake(uint256 amount) external nonReentrant notPaused returns (bool){
         require(amount > 0, "Cannot stake 0");
+
+        updateGlobalIndex();
+        distributeReward(msg.sender);
+
+        //we calculate the "vamount" first here
+        updateVAmounts(msg.sender,amount,true);
+
+
         totalStakes = totalStakes.add(amount);
         _balances[msg.sender] = _balances[msg.sender].add(amount);
 
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
 
-        TimedStake storage _timedStake = timeStakeInfo[msg.sender];
-        _timedStake.stakes[now] = amount;
-        _timedStake.stakeTimes.push(now);
-        timeStakeInfo[msg.sender] = _timedStake;
-
-        updateGlobalIndex();
-        distributeReward(msg.sender);
-
         uint256 rewards = _userRewards[msg.sender];
         if (rewards > 0){
             require(rewardsToken.transferFrom(rewardProvider, msg.sender, rewards),"claim rewards failed");
             delete(_userRewards[msg.sender]);
             emit Claimed(msg.sender,rewards);
         }
-        updateVAmounts(msg.sender,amount, true);
-
 
         emit Staked(msg.sender,amount);
     }
 
-   
+    //add user withdraw application
+    function applyWithdraw(uint256 amount) external nonReentrant{
+        require(amount > 0, "Cannot withdraw 0");
+
+        TimedWithdraw storage withdrawApplies = timeApplyInfo[msg.sender];
+        //should have enough un-applied balance
+        require(withdrawApplies.totalApplied.add(amount) <= _balances[msg.sender], "exceeded user balance!");
+
+        withdrawApplies.totalApplied = withdrawApplies.totalApplied.add(amount);
+        withdrawApplies.applications[now] = amount;
+        withdrawApplies.applyTimes.push(now);
+
+        timeApplyInfo[msg.sender] = withdrawApplies;
+
+        emit ApplyWithdraw(msg.sender,amount,now);
+    }
+
+    //withdraw staked amount if possible
     function withdraw(uint256 amount) public nonReentrant {
         require(amount > 0, "Cannot withdraw 0");
-        totalStakes = totalStakes.sub(amount);
-        _balances[msg.sender] = _balances[msg.sender].sub(amount);
+        require(withdrawableAmount(msg.sender) >= amount,"not enough withdrawable balance");
 
         updateGlobalIndex();
         distributeReward(msg.sender);
+
+        updateVAmounts(msg.sender,amount,false);
+
+        totalStakes = totalStakes.sub(amount);
+        _balances[msg.sender] = _balances[msg.sender].sub(amount);
 
         uint256 rewards = _userRewards[msg.sender];
         if (rewards > 0){
@@ -233,9 +274,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
             delete(_userRewards[msg.sender]);
             emit Claimed(msg.sender,rewards);
         }
-        updateVAmounts(msg.sender, amount, false);
 
-        require(withdrawableAmount(msg.sender) >= amount,"not enough withdrawable balance");
         dealwithLockdown(amount,msg.sender);
         uint256 fee = amount.mul(withdrawRate).div(feeScale);
         stakingToken.safeTransfer(msg.sender, amount.sub(fee));
@@ -284,6 +323,39 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     }
 
     /* ========== INTERNAL FUNCTIONS ========== */
+    /*
+    this staking contract reward calculation is based Compound algorithm
+    we maintains 2 (kinds) index:
+    globalIndex: means how many rewards per staking token,has 2 fields: index and last updated timestamp
+    userIndex: user share from the total staking
+    every time the total staking amount changed ,user claimed rewards and inflation speed changed, we need to update the globalIndex
+    initial status: we ignore the decimals of tokens 
+    globalindex = 1, total staking = 0, speed = 0, we do the operation every 10 seconds
+    1. admin set speed to 100 (100 phb per seconds), since still now staking, we only update the globalindex timestamp to now.
+    2. user A stakes 10000 phb, previous total staking  = 0, globalindex = 1 , , previous balance(A) = 0,distributed reward = 0,then set user A's index = 1
+    3. user B stakes 10000 phb, previous total staking = 10000 , globalindex = 1 + delta(time) * speed/ 10000 = 1.1 ,set user B's index = 1 ,previous balance(b) = 0,distributed reward = 0, then set user B's index = 1.1
+    4. query/claim user A's reward now(also 10 seconds past) ,the new globalindex = 1.1 + 10 * 100/20000 = 1.15
+        (if for the getUserReward function, the globalindex is not saved to storage since it's a 'view' function)   
+        so the rewards is delta(index) * balance(A) = (1.15-1)*10000 = 1500 phb    
+    5. at the same time user B's reward is delta(index) * balance(B) = (1.15-1.1) * 10000 = 500 phb
+    now let's check the result(***NOTE since no one staked in the 1st 10 seconds, so the 1st 1000 phb is wasted!!!!!)
+    time         total reward             user A staking              user B staking        user A reward     user B reward            gIdex                AIdx               BIdx
+    0                  0                       0                            0                   0                   0                    1                   0                   0
+    10                1000                     10000                        0                   0                   0                    1                   1                   0          
+    20                2000                     10000                       10000                1000                0                    1.1                 1                   1.1
+    30                3000                     10000                       10000                500                 500                  1.15(not changed)   1                   1.1
+
+    40                4000                     10000                       10000                500                 500                  1.2                 1                   1.1 
+    50                6000                     10000                       10000                1000                1000                 1.3(not changed)    1                   1.1  
+
+
+    for refresh speed is the same
+    6. admin change speed to 200, then global index = 1.1(assume step 5 is query operation, didn't change the storage) + delta(time) * oldspeed / 20000 = 1.1+20 *100/20000 = 1.2
+    7. user A query reward: current global index = 1.2+ delta(time) * newspeed / 20000 = 1.2 + 10 * 200/20000 = 1.3, so the reward should be (1.3 - 1)* 10000 = 3000
+     user B query reward: so the reward should be (1.3 - 1.1)* 10000 = 2000
+
+    */
+
     function updateGlobalIndex() internal {
         uint256 rewardSpeed = inflationSpeed;
         uint256 deltaTime = now.sub(globalIndex.lastTime);
@@ -324,23 +396,25 @@ contract PhbStaking is ReentrancyGuard, Pausable {
 
     function dealwithLockdown(uint256 amount,address account) internal {
         uint256 _total = amount;
-        TimedStake storage _timedStake = timeStakeInfo[account];
-         for (uint8 index = 0; index < _timedStake.stakeTimes.length; index++) {
+        TimedWithdraw storage withdrawApplies = timeApplyInfo[account];
+         for (uint8 index = 0; index < withdrawApplies.applyTimes.length; index++) {
            if (_total > 0){
-              uint256 key = _timedStake.stakeTimes[index];
+              uint256 key = withdrawApplies.applyTimes[index];
               if (now.sub(key) > lockDownDuration){
-                  if(_total >= _timedStake.stakes[key]){
-                      _total = _total.sub(_timedStake.stakes[key]);
-                      delete( _timedStake.stakes[key]);
-                      delete( _timedStake.stakeTimes[index]);
+                  if(_total >= withdrawApplies.applications[key]){
+                      _total = _total.sub(withdrawApplies.applications[key]);
+                      delete( withdrawApplies.applications[key]);
+                      delete( withdrawApplies.applyTimes[index]);
                   }else{
-                      _timedStake.stakes[key] = _timedStake.stakes[key].sub(_total);
+                      withdrawApplies.applications[key] = withdrawApplies.applications[key].sub(_total);
                       _total = 0;
                       break;
                   }
               }
            }
         }
+
+        withdrawApplies.totalApplied  = withdrawApplies.totalApplied.sub(amount);
     }
 
     function getBalanceLevel(uint256 balance) view internal returns(string memory){
@@ -353,18 +427,17 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         return "";
     }
 
-    function updateVAmounts(address userAcct, uint amount, bool flag) internal {
-        uint256 balanceBefore;
-        uint256 balanceAfter;
-        if(flag){
-            balanceBefore = _balances[userAcct].sub(amount);
-            balanceAfter = _balances[userAcct];
-        } else{
-            balanceBefore = _balances[userAcct].add(amount);
-            balanceAfter = _balances[userAcct];
-        }
+    //optimise the stake weight based reward calculation
+    //"virtualbalance" is record user real balance * level weight
+    //if user total staked 100k, virtualbalance is 100k * 100% = 100k
+    //if user total staked 1M virtualbalance si 1M * 250% = 2.5M
+    //the staking reward is calculated based on this virtualbalance
+    function updateVAmounts(address userAcct,uint256 amount,bool increase) internal {
+        uint256 balanceBefore = _balances[userAcct];
         string memory lvBefore = getBalanceLevel(balanceBefore);
-        uint weightBefore = bytes(lvBefore).length==0 ?0:_ratesLevel[lvBefore].weight;
+        uint weightBefore = bytes(lvBefore).length==0 ? 0 : _ratesLevel[lvBefore].weight;
+        uint256 balanceAfter = increase ? balanceBefore.add(amount) : balanceBefore.sub(amount);
+
         string memory lvAfter = getBalanceLevel(balanceAfter);
         uint weightAfter = bytes(lvAfter).length==0 ?0:_ratesLevel[lvAfter].weight;
 
@@ -373,10 +446,10 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         virtualUserbalance[userAcct] = balanceAfter.mul(weightAfter).div(WeightScale);
 
         //update vtotalstake
-        virtualTotalStakes = virtualTotalStakes.sub(vbalanceBefore).add(virtualUserbalance[userAcct]);
+        virtualTotalStakes = virtualTotalStakes.sub(vbalanceBefore).add( virtualUserbalance[userAcct]);
 
         if (weightBefore == weightAfter){
-            //add amount to lv
+            //update amount to lv
             levelAmount[lvBefore] = levelAmount[lvBefore].sub(balanceBefore).add(balanceAfter);
         }else{
             levelAmount[lvBefore] = levelAmount[lvBefore].sub(balanceBefore);
