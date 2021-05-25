@@ -394,17 +394,34 @@ contract PhbStaking is ReentrancyGuard, Pausable {
     }
 
 
-    function dealwithLockdown(uint256 amount,address account) internal {
+    function remove(uint256[] storage array, uint index) internal returns(uint256[] storage) {
+        if (index >= array.length) return array;
+
+        if(array.length == 1){
+            delete(array[index]);
+            return array;
+        }        
+        for (uint i = index; i<array.length-1; i++){
+            array[i] = array[i+1];
+        }
+        array.length--;
+        return array;
+    }
+
+    function dealwithLockdown(uint256 amount, address account) internal {
         uint256 _total = amount;
         TimedWithdraw storage withdrawApplies = timeApplyInfo[account];
-         for (uint8 index = 0; index < withdrawApplies.applyTimes.length; index++) {
+        //applyTimesLen cannot be change
+        uint256 applyTimesLen = withdrawApplies.applyTimes.length;
+         for (uint8 index = 0; index < applyTimesLen; index++) {
            if (_total > 0){
-              uint256 key = withdrawApplies.applyTimes[index];
+              uint256 key = withdrawApplies.applyTimes[0];
               if (now.sub(key) > lockDownDuration){
                   if(_total >= withdrawApplies.applications[key]){
                       _total = _total.sub(withdrawApplies.applications[key]);
                       delete( withdrawApplies.applications[key]);
-                      delete( withdrawApplies.applyTimes[index]);
+                      remove(withdrawApplies.applyTimes, 0);
+                    //   delete( withdrawApplies.applyTimes[index]);
                   }else{
                       withdrawApplies.applications[key] = withdrawApplies.applications[key].sub(_total);
                       _total = 0;
