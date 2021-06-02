@@ -180,16 +180,16 @@ contract PhbStaking is ReentrancyGuard, Pausable {
 
     //for front end display, the following two method should be used together
     //
-    //since we can't return mapping from smart contract ,we only return total applied and applied times here
-    function getUserApplication(address account) external view returns(uint256,uint256[] memory){
-        return (timeApplyInfo[account].totalApplied,timeApplyInfo[account].applyTimes);
+    //we return total applied, applied times and applied amounts here
+    function getUserApplication(address account) external view returns(uint256, uint256[] memory, uint256[] memory){
+        uint256[] memory applyTimes = timeApplyInfo[account].applyTimes;
+        uint256[] memory applyAmounts = new uint256[](applyTimes.length);
+        for (uint8 index = 0 ;index < applyTimes.length; index++){
+            applyAmounts[index] = timeApplyInfo[account].applications[applyTimes[index]];
+        }
+        
+        return (timeApplyInfo[account].totalApplied, applyTimes, applyAmounts);
     }
-
-    //we use the applied time as key to get the amount of this time
-    function getUserApplicationCount(address account, uint256 time) external view returns(uint256){
-        return timeApplyInfo[account].applications[time];
-    }
-
 
     //return levels config in contract
     function getLevelInfos() external view returns(string[] memory){
