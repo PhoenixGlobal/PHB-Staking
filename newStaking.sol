@@ -244,21 +244,13 @@ contract PhbStaking is ReentrancyGuard, Pausable {
 
         TimedWithdraw storage withdrawApplies = timeApplyInfo[msg.sender];
         //should have enough un-applied balance
-        require(withdrawApplies.totalApplied.add(amount) <= _balances[msg.sender], "exceeded user balance!");
+        require(amount <= _balances[msg.sender], "exceeded user balance!");
 
         withdrawApplies.totalApplied = withdrawApplies.totalApplied.add(amount);
         withdrawApplies.applications[now] = amount;
         withdrawApplies.applyTimes.push(now);
 
         timeApplyInfo[msg.sender] = withdrawApplies;
-
-        emit ApplyWithdraw(msg.sender,amount,now);
-    }
-
-    //withdraw staked amount if possible
-    function withdraw(uint256 amount) public nonReentrant {
-        require(amount > 0, "Cannot withdraw 0");
-        require(withdrawableAmount(msg.sender) >= amount,"not enough withdrawable balance");
 
         updateGlobalIndex();
         distributeReward(msg.sender);
@@ -275,6 +267,13 @@ contract PhbStaking is ReentrancyGuard, Pausable {
             emit Claimed(msg.sender,rewards);
         }
 
+        emit ApplyWithdraw(msg.sender,amount,now);
+    }
+
+    //withdraw staked amount if possible
+    function withdraw(uint256 amount) public nonReentrant {
+        require(amount > 0, "Cannot withdraw 0");
+        require(withdrawableAmount(msg.sender) >= amount,"not enough withdrawable balance");
         dealwithLockdown(amount,msg.sender);
         uint256 fee = amount.mul(withdrawRate).div(feeScale);
         stakingToken.safeTransfer(msg.sender, amount.sub(fee));
