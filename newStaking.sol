@@ -124,11 +124,11 @@ contract PhbStaking is ReentrancyGuard, Pausable {
 
     /* ========== internals ======== */
     function initLevel() internal {
-        _ratesLevel[levels[0]] = RateLevel({min:100000,max:499999,weight:100});
-        _ratesLevel[levels[1]] = RateLevel({min:500000,max:999999,weight:250});
-        _ratesLevel[levels[2]] = RateLevel({min:1000000,max:4999999,weight:400});
-        _ratesLevel[levels[3]] = RateLevel({min:5000000,max:9999999,weight:600});
-        _ratesLevel[levels[4]] = RateLevel({min:10000000,max:999999999999,weight:800});
+        _ratesLevel[levels[0]] = RateLevel({min:100000,max:500000,weight:100});
+        _ratesLevel[levels[1]] = RateLevel({min:500000,max:1000000,weight:250});
+        _ratesLevel[levels[2]] = RateLevel({min:1000000,max:5000000,weight:400});
+        _ratesLevel[levels[3]] = RateLevel({min:5000000,max:10000000,weight:600});
+        _ratesLevel[levels[4]] = RateLevel({min:10000000,max:1000000000000,weight:800});
 
     }
 
