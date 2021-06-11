@@ -66,7 +66,7 @@ contract PhbStaking is ReentrancyGuard, Pausable {
         uint mantissa;
     }
     
-    string [] levels = ["Carbon","Genesis","Platinum","Zironium","Diamond"];
+    string [] levels = ["Carbon","Genesis","Platinum","Zirconium","Diamond"];
 
 
     struct RateLevel {
