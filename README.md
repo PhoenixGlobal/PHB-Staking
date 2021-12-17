@@ -1,15 +1,15 @@
 # PHB-Staking
 
-## 1. 构造函数参数需要以下3个：
+## 1. Constructor parameters：
 
-    合约owner的地址
-    phb token地址
-    phb token地址
+    owner address
+    phb token address
+    phb token address
 
- ## 2. 部署合约以后需要使用owner设置增发的速率 ：
+ ## 2. After the contract is deployed, owner should set the inflation rate：
 ```
  function setInflationSpeed(uint256 speed) external;
- //每秒的token数量， 如1 phb/秒 则设置 1000000000000000000(1e18)
+ // reward amount per second
 ```
 
  ## 3. staking:
@@ -17,22 +17,18 @@
  function stake(uint256 amount) external;
 ```
 
- ## 4. 可解除质押的数量
+ ## 4. return withdrawable staking Amount
      function withdrawableAmount(address account)external view returns(uint256);
 
-## 5. 提取质押
-    function applyWithdraw(uint256 amount) external nonReentrant; //先申请提取
-    function withdraw(uint256 amount) external; //申请后超过锁定时间可以提取
+## 5. withdraw staking token
+    function applyWithdraw(uint256 amount) external nonReentrant; //apply withdraw
+    function withdraw(uint256 amount) external; //can withdraw token after the locking time
 
-以上3，4，5逻辑和hzn staking合约相同
-
-## 6. 取得的reward数量
+## 6. return the reward amount
     function getUserRewards(address account) external view returns(uint256);
-    //如果该用户的质押总量小于最低等级100000 则无奖励    
 
-## 7. 提取reward
+## 7. claim reward
     function claimReward() external;
-    //这步操作是从rewardProvider的账户中transferFrom用户的奖励Phb,所以需要rewardProvider将每期的inflation数量增量的approve给合约（当前的allownace + 本期应增发数量）。	
 
 ## 8. this staking contract reward calculation is based Compound algorithm
     we maintains 2 (kinds) index:
